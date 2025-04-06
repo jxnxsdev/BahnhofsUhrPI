@@ -1,0 +1,1936 @@
+<!DOCTYPE html>
+<html lang="de">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analoge Uhr Controller</title>
+    <style>
+        :root {
+            --primary-color: #6d28d9;
+            --primary-light: #8b5cf6;
+            --secondary-color: #ec4899;
+            --background-color: #111827;
+            --card-bg: #1f2937;
+            --text-color: #e5e7eb;
+            --border-color: #374151;
+            --success-color: #10b981;
+            --danger-color: #ef4444;
+            --warning-color: #f59e0b;
+            --disabled-color: #4b5563;
+            --disabled-text: #9ca3af;
+            --clock-face: #1f2937;
+            --clock-border: #8b5cf6;
+            --hour-hand: #e5e7eb;
+            --minute-hand: #8b5cf6;
+            --center-dot: #ec4899;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            line-height: 1.6;
+            position: relative;
+            overflow-x: hidden;
+        }
+
+        /* Hintergrundanimation */
+        .background-animation {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            overflow: hidden;
+        }
+
+        .floating-circle {
+            position: absolute;
+            border-radius: 50%;
+            opacity: 0.1;
+            filter: blur(8px);
+            animation: float 15s infinite ease-in-out;
+        }
+
+        @keyframes float {
+
+            0%,
+            100% {
+                transform: translateY(0) translateX(0);
+            }
+
+            25% {
+                transform: translateY(-50px) translateX(50px);
+            }
+
+            50% {
+                transform: translateY(-100px) translateX(0);
+            }
+
+            75% {
+                transform: translateY(-50px) translateX(-50px);
+            }
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+            display: grid;
+            grid-template-columns: 1fr;
+            grid-template-areas:
+                "clock"
+                "settings"
+                "controls";
+            gap: 20px;
+        }
+
+        @media (min-width: 992px) {
+            .container {
+                grid-template-columns: 1fr 1fr;
+                grid-template-areas:
+                    "clock settings"
+                    "controls controls";
+            }
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            border-radius: 16px;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
+            padding: 25px;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            border: 1px solid var(--border-color);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.4);
+        }
+
+        h1,
+        h2,
+        h3 {
+            color: var(--primary-light);
+            margin-bottom: 20px;
+            position: relative;
+            display: inline-block;
+        }
+
+        h1::after,
+        h2::after,
+        h3::after {
+            content: '';
+            position: absolute;
+            bottom: -8px;
+            left: 0;
+            width: 40px;
+            height: 3px;
+            background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+            border-radius: 3px;
+        }
+
+        .clock-container {
+            grid-area: clock;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #clock-canvas {
+            width: 300px;
+            height: 300px;
+            margin: 20px auto;
+            transition: transform 0.5s ease;
+        }
+
+        #clock-canvas:hover {
+            transform: scale(1.05);
+        }
+
+        @media (min-width: 768px) {
+            #clock-canvas {
+                width: 400px;
+                height: 400px;
+            }
+        }
+
+        .current-time {
+            font-size: 28px;
+            font-weight: bold;
+            margin: 15px 0;
+            text-align: center;
+            background: linear-gradient(90deg, var(--primary-light), var(--secondary-color));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-fill-color: transparent;
+        }
+
+        .settings-container {
+            grid-area: settings;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .time-controls {
+            grid-area: controls;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: var(--text-color);
+        }
+
+        input[type="text"],
+        input[type="number"] {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 16px;
+            background-color: rgba(255, 255, 255, 0.05);
+            color: var(--text-color);
+            transition: border-color 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        input[type="text"]:focus,
+        input[type="number"]:focus {
+            outline: none;
+            border-color: var(--primary-light);
+            box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.3);
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 34px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #4b5563;
+            transition: .4s;
+            border-radius: 34px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 26px;
+            width: 26px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked+.slider {
+            background-color: var(--primary-color);
+        }
+
+        input:focus+.slider {
+            box-shadow: 0 0 1px var(--primary-color);
+        }
+
+        input:checked+.slider:before {
+            transform: translateX(26px);
+        }
+
+        .switch-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        #realtime-status {
+            font-weight: bold;
+        }
+
+        .btn {
+            display: inline-block;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 12px 18px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            font-weight: 500;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        .btn:hover {
+            background-color: var(--primary-light);
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn-secondary {
+            background-color: var(--secondary-color);
+        }
+
+        .btn-secondary:hover {
+            background-color: #f472b6;
+        }
+
+        .btn-disabled {
+            background-color: var(--disabled-color);
+            color: var(--disabled-text);
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+
+        .btn-disabled:hover {
+            transform: none;
+            box-shadow: none;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+
+        .cue-stack {
+            margin-top: 30px;
+        }
+
+        .cue-list {
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            margin-bottom: 20px;
+            background-color: rgba(255, 255, 255, 0.03);
+        }
+
+        .cue-item {
+            padding: 12px 15px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: background-color 0.2s ease;
+        }
+
+        .cue-item:hover {
+            background-color: rgba(255, 255, 255, 0.05);
+        }
+
+        .cue-item:last-child {
+            border-bottom: none;
+        }
+
+        .cue-item button {
+            background-color: var(--danger-color);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            padding: 6px 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .cue-item button:hover {
+            background-color: #f87171;
+        }
+
+        .status-message {
+            margin-top: 15px;
+            padding: 12px;
+            border-radius: 8px;
+            display: none;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .success {
+            background-color: rgba(16, 185, 129, 0.2);
+            color: var(--success-color);
+            display: block;
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .error {
+            background-color: rgba(239, 68, 68, 0.2);
+            color: var(--danger-color);
+            display: block;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .warning {
+            background-color: rgba(245, 158, 11, 0.2);
+            color: var(--warning-color);
+            display: block;
+            border: 1px solid rgba(245, 158, 11, 0.3);
+        }
+
+        .input-with-button {
+            display: flex;
+            gap: 10px;
+        }
+
+        .input-with-button input {
+            flex: 1;
+        }
+
+        .section-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .section-title svg {
+            width: 24px;
+            height: 24px;
+            color: var(--primary-light);
+        }
+
+        .busy-indicator {
+            display: none;
+            align-items: center;
+            gap: 10px;
+            margin-top: 15px;
+            padding: 12px;
+            border-radius: 8px;
+            background-color: rgba(251, 191, 36, 0.2);
+            color: #fbbf24;
+            border: 1px solid rgba(251, 191, 36, 0.3);
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.7;
+            }
+        }
+
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(251, 191, 36, 0.3);
+            border-radius: 50%;
+            border-top-color: #fbbf24;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .realtime-warning {
+            background-color: rgba(245, 158, 11, 0.2);
+            color: var(--warning-color);
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            display: none;
+        }
+
+        /* Popup Styles */
+        .popup-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+
+        .popup-btn svg {
+            width: 18px;
+            height: 18px;
+        }
+
+        /* Popup Window Styles */
+        .popup-container {
+            padding: 20px;
+            background-color: var(--background-color);
+            color: var(--text-color);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        .popup-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .popup-title {
+            font-size: 24px;
+            color: var(--primary-light);
+        }
+
+        .popup-close {
+            background: none;
+            border: none;
+            color: var(--text-color);
+            font-size: 24px;
+            cursor: pointer;
+        }
+
+        .popup-close:hover {
+            color: var(--secondary-color);
+        }
+
+        .popup-cue-list {
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            margin-bottom: 20px;
+            background-color: rgba(255, 255, 255, 0.03);
+        }
+
+        .popup-controls {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .popup-current-cue {
+            text-align: center;
+            font-size: 20px;
+            margin-bottom: 20px;
+            padding: 10px;
+            background-color: rgba(139, 92, 246, 0.2);
+            border-radius: 8px;
+            border: 1px solid rgba(139, 92, 246, 0.3);
+        }
+
+        .popup-time {
+            font-size: 36px;
+            text-align: center;
+            margin: 20px 0;
+            font-weight: bold;
+            background: linear-gradient(90deg, var(--primary-light), var(--secondary-color));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-fill-color: transparent;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Hintergrundanimation -->
+    <div class="background-animation">
+        <div class="floating-circle"
+            style="width: 300px; height: 300px; background-color: #6d28d9; top: 10%; left: 10%; animation-delay: 0s;">
+        </div>
+        <div class="floating-circle"
+            style="width: 200px; height: 200px; background-color: #ec4899; top: 60%; left: 70%; animation-delay: 3s;">
+        </div>
+        <div class="floating-circle"
+            style="width: 250px; height: 250px; background-color: #8b5cf6; top: 40%; left: 30%; animation-delay: 6s;">
+        </div>
+        <div class="floating-circle"
+            style="width: 180px; height: 180px; background-color: #6d28d9; top: 70%; left: 20%; animation-delay: 9s;">
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="card clock-container">
+            <h1>Analoge Uhr</h1>
+            <canvas id="clock-canvas"></canvas>
+            <div class="current-time" id="current-time">12:00</div>
+            <div id="busy-indicator" class="busy-indicator">
+                <div class="spinner"></div>
+                <span>Die Uhr wird gerade verstellt...</span>
+            </div>
+        </div>
+
+        <div class="card settings-container">
+            <div class="section-title">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                <h2>Einstellungen</h2>
+            </div>
+
+            <div class="form-group">
+                <label for="realtime-toggle">Echtzeitmodus</label>
+                <div class="switch-container">
+                    <label class="switch">
+                        <input type="checkbox" id="realtime-toggle" checked>
+                        <span class="slider"></span>
+                    </label>
+                    <span id="realtime-status">Ein</span>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="interval-time">Intervalzeit (ms)</label>
+                <div class="input-with-button">
+                    <input type="number" id="interval-time" min="50" value="1000">
+                    <button class="btn" id="set-interval">Setzen</button>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="override-time">Physikalische Uhrzeit überschreiben</label>
+                <div class="input-with-button">
+                    <input type="text" id="override-time" placeholder="HH:MM (12h Format)">
+                    <button class="btn" id="set-override">Setzen</button>
+                </div>
+            </div>
+
+            <div id="status-message" class="status-message"></div>
+        </div>
+
+        <div class="card time-controls" id="time-controls">
+            <div id="realtime-warning" class="realtime-warning">
+                <strong>Hinweis:</strong> Die manuelle Zeitsteuerung ist im Echtzeitmodus deaktiviert. Bitte
+                deaktivieren Sie den Echtzeitmodus, um diese Funktionen zu nutzen.
+            </div>
+
+            <div class="section-title">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <h2>Manuelle Zeitsteuerung</h2>
+            </div>
+
+            <div class="form-group">
+                <label for="manual-time">Zeit manuell einstellen</label>
+                <div class="input-with-button">
+                    <input type="text" id="manual-time" placeholder="HH:MM (12h Format)">
+                    <button class="btn" id="set-manual-time">Setzen</button>
+                </div>
+            </div>
+
+            <h3>Minuten springen</h3>
+            <div class="btn-group" id="minutes-buttons">
+                <button class="btn" data-minutes="-45">-45m</button>
+                <button class="btn" data-minutes="-30">-30m</button>
+                <button class="btn" data-minutes="-15">-15m</button>
+                <button class="btn" data-minutes="-10">-10m</button>
+                <button class="btn" data-minutes="-1">-1m</button>
+                <button class="btn" data-minutes="1">+1m</button>
+                <button class="btn" data-minutes="10">+10m</button>
+                <button class="btn" data-minutes="15">+15m</button>
+                <button class="btn" data-minutes="30">+30m</button>
+                <button class="btn" data-minutes="45">+45m</button>
+            </div>
+
+            <h3>Stunden springen</h3>
+            <div class="btn-group" id="hours-buttons">
+                <button class="btn" data-hours="-10">-10h</button>
+                <button class="btn" data-hours="-5">-5h</button>
+                <button class="btn" data-hours="-2">-2h</button>
+                <button class="btn" data-hours="-1">-1h</button>
+                <button class="btn" data-hours="1">+1h</button>
+                <button class="btn" data-hours="2">+2h</button>
+                <button class="btn" data-hours="5">+5h</button>
+                <button class="btn" data-hours="10">+10h</button>
+            </div>
+
+            <div class="cue-stack">
+                <div class="section-title">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                            d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                    </svg>
+                    <h3>Cue Stack</h3>
+
+                    <button class="btn popup-btn" id="open-cue-popup">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                        Popup öffnen
+                    </button>
+                </div>
+
+                <div class="form-group">
+                    <label for="cue-time">Cue Zeit hinzufügen</label>
+                    <div class="input-with-button">
+                        <input type="text" id="cue-time" placeholder="HH:MM (12h Format)">
+                        <button class="btn" id="add-cue">Hinzufügen</button>
+                    </div>
+                </div>
+
+                <div class="cue-list" id="cue-list">
+                    <!-- Cue items will be added here dynamically -->
+                </div>
+
+                <div class="btn-group" id="cue-buttons">
+                    <button class="btn" id="prev-cue">Vorheriger Cue</button>
+                    <button class="btn" id="next-cue">Nächster Cue</button>
+                    <button class="btn btn-secondary" id="export-cues">Exportieren</button>
+                    <button class="btn btn-secondary" id="import-cues">Importieren</button>
+                    <input type="file" id="import-file" style="display: none;">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Template für das Popup-Fenster -->
+    <template id="popup-template">
+        <!DOCTYPE html>
+        <html lang="de">
+
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Cue Stack Player</title>
+            <style>
+                :root {
+                    --primary-color: #6d28d9;
+                    --primary-light: #8b5cf6;
+                    --secondary-color: #ec4899;
+                    --background-color: #111827;
+                    --card-bg: #1f2937;
+                    --text-color: #e5e7eb;
+                    --border-color: #374151;
+                    --success-color: #10b981;
+                    --danger-color: #ef4444;
+                    --warning-color: #f59e0b;
+                }
+
+                * {
+                    margin: 0;
+                    padding: 0;
+                    box-sizing: border-box;
+                }
+
+                body {
+                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                    background-color: var(--background-color);
+                    color: var(--text-color);
+                    line-height: 1.6;
+                    padding: 20px;
+                }
+
+                .popup-container {
+                    max-width: 600px;
+                    margin: 0 auto;
+                }
+
+                .popup-header {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin-bottom: 20px;
+                    padding-bottom: 10px;
+                    border-bottom: 1px solid var(--border-color);
+                }
+
+                .popup-title {
+                    font-size: 24px;
+                    color: var(--primary-light);
+                }
+
+                .popup-close {
+                    background: none;
+                    border: none;
+                    color: var(--text-color);
+                    font-size: 24px;
+                    cursor: pointer;
+                }
+
+                .popup-close:hover {
+                    color: var(--secondary-color);
+                }
+
+                .popup-cue-list {
+                    max-height: 400px;
+                    overflow-y: auto;
+                    border: 1px solid var(--border-color);
+                    border-radius: 8px;
+                    margin-bottom: 20px;
+                    background-color: rgba(255, 255, 255, 0.03);
+                }
+
+                .popup-cue-item {
+                    padding: 12px 15px;
+                    border-bottom: 1px solid var(--border-color);
+                    display: flex;
+                    align-items: center;
+                    transition: background-color 0.2s ease;
+                }
+
+                .popup-cue-item:hover {
+                    background-color: rgba(255, 255, 255, 0.05);
+                }
+
+                .popup-cue-item:last-child {
+                    border-bottom: none;
+                }
+
+                .popup-cue-item.active {
+                    background-color: rgba(139, 92, 246, 0.2);
+                    border-left: 3px solid var(--primary-light);
+                }
+
+                .popup-controls {
+                    display: flex;
+                    justify-content: center;
+                    gap: 15px;
+                    margin-top: 20px;
+                }
+
+                .btn {
+                    display: inline-block;
+                    background-color: var(--primary-color);
+                    color: white;
+                    border: none;
+                    padding: 12px 18px;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    font-size: 16px;
+                    transition: all 0.3s ease;
+                    font-weight: 500;
+                    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+                }
+
+                .btn:hover {
+                    background-color: var(--primary-light);
+                    transform: translateY(-2px);
+                    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.2);
+                }
+
+                .btn:active {
+                    transform: translateY(0);
+                }
+
+                .popup-current-cue {
+                    text-align: center;
+                    font-size: 20px;
+                    margin-bottom: 20px;
+                    padding: 10px;
+                    background-color: rgba(139, 92, 246, 0.2);
+                    border-radius: 8px;
+                    border: 1px solid rgba(139, 92, 246, 0.3);
+                }
+
+                .popup-time {
+                    font-size: 36px;
+                    text-align: center;
+                    margin: 20px 0;
+                    font-weight: bold;
+                    background: linear-gradient(90deg, var(--primary-light), var(--secondary-color));
+                    -webkit-background-clip: text;
+                    -webkit-text-fill-color: transparent;
+                    background-clip: text;
+                    text-fill-color: transparent;
+                }
+
+                .popup-clock {
+                    width: 200px;
+                    height: 200px;
+                    margin: 20px auto;
+                }
+
+                .busy-indicator {
+                    display: none;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 10px;
+                    margin-top: 15px;
+                    padding: 12px;
+                    border-radius: 8px;
+                    background-color: rgba(251, 191, 36, 0.2);
+                    color: #fbbf24;
+                    border: 1px solid rgba(251, 191, 36, 0.3);
+                    animation: pulse 1.5s infinite;
+                }
+
+                @keyframes pulse {
+
+                    0%,
+                    100% {
+                        opacity: 1;
+                    }
+
+                    50% {
+                        opacity: 0.7;
+                    }
+                }
+
+                .spinner {
+                    width: 20px;
+                    height: 20px;
+                    border: 3px solid rgba(251, 191, 36, 0.3);
+                    border-radius: 50%;
+                    border-top-color: #fbbf24;
+                    animation: spin 1s linear infinite;
+                }
+
+                @keyframes spin {
+                    to {
+                        transform: rotate(360deg);
+                    }
+                }
+
+                .keyboard-shortcuts {
+                    margin-top: 30px;
+                    padding: 15px;
+                    background-color: rgba(255, 255, 255, 0.05);
+                    border-radius: 8px;
+                    border: 1px solid var(--border-color);
+                }
+
+                .keyboard-shortcuts h3 {
+                    margin-bottom: 10px;
+                    color: var(--primary-light);
+                }
+
+                .shortcut {
+                    display: flex;
+                    justify-content: space-between;
+                    margin-bottom: 8px;
+                }
+
+                .key {
+                    background-color: rgba(255, 255, 255, 0.1);
+                    padding: 2px 8px;
+                    border-radius: 4px;
+                    font-family: monospace;
+                }
+            </style>
+        </head>
+
+        <body>
+            <div class="popup-container">
+                <div class="popup-header">
+                    <h1 class="popup-title">Cue Stack Player</h1>
+                    <button class="popup-close" id="popup-close">&times;</button>
+                </div>
+
+                <div class="popup-time" id="popup-time">12:00</div>
+                <canvas id="popup-clock-canvas" class="popup-clock"></canvas>
+
+                <div id="popup-current-cue" class="popup-current-cue">Kein Cue ausgewählt</div>
+
+                <div class="popup-cue-list" id="popup-cue-list">
+                    <!-- Cue items will be added here dynamically -->
+                </div>
+
+                <div class="popup-controls">
+                    <button class="btn" id="popup-prev-cue">Vorheriger</button>
+                    <button class="btn" id="popup-next-cue">Nächster</button>
+                </div>
+
+                <div id="popup-busy-indicator" class="busy-indicator">
+                    <div class="spinner"></div>
+                    <span>Die Uhr wird gerade verstellt...</span>
+                </div>
+
+                <div class="keyboard-shortcuts">
+                    <h3>Tastaturkürzel</h3>
+                    <div class="shortcut">
+                        <span>Nächster Cue</span>
+                        <span class="key">Leertaste</span> oder <span class="key">→</span>
+                    </div>
+                    <div class="shortcut">
+                        <span>Vorheriger Cue</span>
+                        <span class="key">←</span>
+                    </div>
+                    <div class="shortcut">
+                        <span>Fenster schließen</span>
+                        <span class="key">Esc</span>
+                    </div>
+                </div>
+            </div>
+
+            <script>
+                // Diese Funktion wird vom Hauptfenster aufgerufen
+                function initializePopup(cues, currentCueIndex, currentTime) {
+                    const popupTimeElement = document.getElementById('popup-time');
+                    const popupCurrentCueElement = document.getElementById('popup-current-cue');
+                    const popupCueListElement = document.getElementById('popup-cue-list');
+                    const popupPrevCueButton = document.getElementById('popup-prev-cue');
+                    const popupNextCueButton = document.getElementById('popup-next-cue');
+                    const popupCloseButton = document.getElementById('popup-close');
+                    const popupBusyIndicator = document.getElementById('popup-busy-indicator');
+                    const popupClockCanvas = document.getElementById('popup-clock-canvas');
+                    const ctx = popupClockCanvas.getContext('2d');
+
+                    // Initialisiere die Uhr
+                    setupCanvas();
+                    drawClock(currentTime);
+
+                    // Zeige die aktuelle Zeit an
+                    popupTimeElement.textContent = currentTime;
+
+                    // Zeige den aktuellen Cue an
+                    updateCurrentCueDisplay();
+
+                    // Rendere die Cue-Liste
+                    renderCueList();
+
+                    // Event-Listener für Buttons
+                    popupPrevCueButton.addEventListener('click', () => {
+                        window.opener.goToPrevCue();
+                    });
+
+                    popupNextCueButton.addEventListener('click', () => {
+                        window.opener.goToNextCue();
+                    });
+
+                    popupCloseButton.addEventListener('click', () => {
+                        window.close();
+                    });
+
+                    // Tastaturkürzel
+                    document.addEventListener('keydown', (event) => {
+                        if (event.key === 'ArrowRight' || event.key === ' ') {
+                            window.opener.goToNextCue();
+                        } else if (event.key === 'ArrowLeft') {
+                            window.opener.goToPrevCue();
+                        } else if (event.key === 'Escape') {
+                            window.close();
+                        }
+                    });
+
+                    // Funktion zum Aktualisieren der Anzeige
+                    function updateDisplay(newTime, newCueIndex, isBusy) {
+                        currentTime = newTime;
+                        currentCueIndex = newCueIndex;
+
+                        popupTimeElement.textContent = currentTime;
+                        drawClock(currentTime);
+                        updateCurrentCueDisplay();
+                        renderCueList();
+
+                        popupBusyIndicator.style.display = isBusy ? 'flex' : 'none';
+                    }
+
+                    // Funktion zum Anzeigen des aktuellen Cues
+                    function updateCurrentCueDisplay() {
+                        if (currentCueIndex >= 0 && currentCueIndex < cues.length) {
+                            popupCurrentCueElement.textContent = `Cue ${currentCueIndex + 1}: ${cues[currentCueIndex]}`;
+                        } else {
+                            popupCurrentCueElement.textContent = 'Kein Cue ausgewählt';
+                        }
+                    }
+
+                    // Funktion zum Rendern der Cue-Liste
+                    function renderCueList() {
+                        popupCueListElement.innerHTML = '';
+
+                        if (cues.length === 0) {
+                            const emptyItem = document.createElement('div');
+                            emptyItem.className = 'popup-cue-item';
+                            emptyItem.textContent = 'Keine Cues vorhanden';
+                            popupCueListElement.appendChild(emptyItem);
+                            return;
+                        }
+
+                        cues.forEach((cue, index) => {
+                            const cueItem = document.createElement('div');
+                            cueItem.className = 'popup-cue-item';
+                            if (index === currentCueIndex) {
+                                cueItem.classList.add('active');
+                            }
+
+                            cueItem.textContent = `${index + 1}. ${cue}`;
+                            cueItem.addEventListener('click', () => {
+                                window.opener.setCueIndex(index);
+                            });
+
+                            popupCueListElement.appendChild(cueItem);
+                        });
+                    }
+
+                    // Canvas-Funktionen für die Uhr
+                    function setupCanvas() {
+                        const dpr = window.devicePixelRatio || 1;
+                        const rect = popupClockCanvas.getBoundingClientRect();
+
+                        popupClockCanvas.width = rect.width * dpr;
+                        popupClockCanvas.height = rect.height * dpr;
+
+                        ctx.scale(dpr, dpr);
+                        popupClockCanvas.style.width = `${rect.width}px`;
+                        popupClockCanvas.style.height = `${rect.height}px`;
+                    }
+
+                    function drawClock(time) {
+                        const [hoursStr, minutesStr] = time.split(':');
+                        let hours = parseInt(hoursStr);
+                        const minutes = parseInt(minutesStr);
+
+                        // Convert to 24-hour format for calculations
+                        if (hours === 12) hours = 0;
+
+                        setupCanvas();
+
+                        const width = popupClockCanvas.width / window.devicePixelRatio;
+                        const height = popupClockCanvas.height / window.devicePixelRatio;
+                        const centerX = width / 2;
+                        const centerY = height / 2;
+                        const radius = Math.min(centerX, centerY) - 10;
+
+                        // Clear canvas
+                        ctx.clearRect(0, 0, width, height);
+
+                        // Draw clock face
+                        ctx.beginPath();
+                        ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+                        ctx.fillStyle = '#1f2937';
+                        ctx.fill();
+
+                        // Draw clock border with gradient
+                        const gradient = ctx.createLinearGradient(
+                            centerX - radius, centerY - radius,
+                            centerX + radius, centerY + radius
+                        );
+                        gradient.addColorStop(0, '#6d28d9');
+                        gradient.addColorStop(1, '#ec4899');
+
+                        ctx.lineWidth = 3;
+                        ctx.strokeStyle = gradient;
+                        ctx.stroke();
+
+                        // Draw hour markers
+                        for (let i = 1; i <= 12; i++) {
+                            const angle = (i * Math.PI / 6) - Math.PI / 2;
+                            const x1 = centerX + (radius - 25) * Math.cos(angle);
+                            const y1 = centerY + (radius - 25) * Math.sin(angle);
+
+                            ctx.font = 'bold 16px Arial';
+                            ctx.fillStyle = '#e5e7eb';
+                            ctx.textAlign = 'center';
+                            ctx.textBaseline = 'middle';
+                            ctx.fillText(i.toString(), x1, y1);
+                        }
+
+                        // Draw minute markers
+                        for (let i = 0; i < 60; i++) {
+                            if (i % 5 !== 0) {
+                                const angle = (i * Math.PI / 30) - Math.PI / 2;
+                                const x1 = centerX + (radius - 10) * Math.cos(angle);
+                                const y1 = centerY + (radius - 10) * Math.sin(angle);
+                                const x2 = centerX + radius * Math.cos(angle);
+                                const y2 = centerY + radius * Math.sin(angle);
+
+                                ctx.beginPath();
+                                ctx.moveTo(x1, y1);
+                                ctx.lineTo(x2, y2);
+                                ctx.lineWidth = 1;
+                                ctx.strokeStyle = '#6b7280';
+                                ctx.stroke();
+                            }
+                        }
+
+                        // Draw hour hand
+                        const hourAngle = ((hours % 12) + minutes / 60) * Math.PI / 6 - Math.PI / 2;
+                        drawHand(centerX, centerY, radius * 0.5, hourAngle, 6, '#e5e7eb');
+
+                        // Draw minute hand
+                        const minuteAngle = minutes * Math.PI / 30 - Math.PI / 2;
+                        drawHand(centerX, centerY, radius * 0.8, minuteAngle, 3, '#8b5cf6');
+
+                        // Draw center circle
+                        ctx.beginPath();
+                        ctx.arc(centerX, centerY, 6, 0, 2 * Math.PI);
+                        ctx.fillStyle = '#ec4899';
+                        ctx.fill();
+                    }
+
+                    function drawHand(centerX, centerY, length, angle, width, color) {
+                        ctx.beginPath();
+                        ctx.lineWidth = width;
+                        ctx.lineCap = 'round';
+                        ctx.strokeStyle = color;
+
+                        ctx.moveTo(centerX, centerY);
+                        ctx.lineTo(
+                            centerX + length * Math.cos(angle),
+                            centerY + length * Math.sin(angle)
+                        );
+
+                        ctx.stroke();
+                    }
+
+                    // Exportiere Funktionen für das Hauptfenster
+                    window.popupInterface = {
+                        updateDisplay: updateDisplay
+                    };
+                }
+            </script>
+        </body>
+
+        </html>
+    </template>
+
+    <script>
+        // DOM Elements
+        const clockCanvas = document.getElementById('clock-canvas');
+        const ctx = clockCanvas.getContext('2d');
+        const currentTimeElement = document.getElementById('current-time');
+        const realtimeToggle = document.getElementById('realtime-toggle');
+        const realtimeStatus = document.getElementById('realtime-status');
+        const intervalTimeInput = document.getElementById('interval-time');
+        const setIntervalButton = document.getElementById('set-interval');
+        const overrideTimeInput = document.getElementById('override-time');
+        const setOverrideButton = document.getElementById('set-override');
+        const manualTimeInput = document.getElementById('manual-time');
+        const setManualTimeButton = document.getElementById('set-manual-time');
+        const timeControlsContainer = document.getElementById('time-controls');
+        const statusMessage = document.getElementById('status-message');
+        const busyIndicator = document.getElementById('busy-indicator');
+        const cueTimeInput = document.getElementById('cue-time');
+        const addCueButton = document.getElementById('add-cue');
+        const cueList = document.getElementById('cue-list');
+        const prevCueButton = document.getElementById('prev-cue');
+        const nextCueButton = document.getElementById('next-cue');
+        const exportCuesButton = document.getElementById('export-cues');
+        const importCuesButton = document.getElementById('import-cues');
+        const importFileInput = document.getElementById('import-file');
+        const openCuePopupButton = document.getElementById('open-cue-popup');
+        const realtimeWarning = document.getElementById('realtime-warning');
+        const minutesButtons = document.getElementById('minutes-buttons');
+        const hoursButtons = document.getElementById('hours-buttons');
+        const cueButtons = document.getElementById('cue-buttons');
+
+        // State variables
+        let currentTime = "12:00";
+        let useRealTime = true;
+        let intervalTime = 1000;
+        let cues = [];
+        let currentCueIndex = -1;
+        let pollingInterval;
+        let isBusy = false;
+        let popupWindow = null;
+
+        // Initialize canvas size
+        function setupCanvas() {
+            const dpr = window.devicePixelRatio || 1;
+            const rect = clockCanvas.getBoundingClientRect();
+
+            clockCanvas.width = rect.width * dpr;
+            clockCanvas.height = rect.height * dpr;
+
+            ctx.scale(dpr, dpr);
+            clockCanvas.style.width = `${rect.width}px`;
+            clockCanvas.style.height = `${rect.height}px`;
+        }
+
+        // Draw clock face and hands
+        function drawClock(time) {
+            const [hoursStr, minutesStr] = time.split(':');
+            let hours = parseInt(hoursStr);
+            const minutes = parseInt(minutesStr);
+
+            // Convert to 24-hour format for calculations
+            if (hours === 12) hours = 0;
+
+            setupCanvas();
+
+            const width = clockCanvas.width / window.devicePixelRatio;
+            const height = clockCanvas.height / window.devicePixelRatio;
+            const centerX = width / 2;
+            const centerY = height / 2;
+            const radius = Math.min(centerX, centerY) - 10;
+
+            // Clear canvas
+            ctx.clearRect(0, 0, width, height);
+
+            // Draw clock face
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+            ctx.fillStyle = '#1f2937';
+            ctx.fill();
+
+            // Draw clock border with gradient
+            const gradient = ctx.createLinearGradient(
+                centerX - radius, centerY - radius,
+                centerX + radius, centerY + radius
+            );
+            gradient.addColorStop(0, '#6d28d9'); // Direkte Farbe statt var(--primary-color)
+            gradient.addColorStop(1, '#ec4899'); // Direkte Farbe statt var(--secondary-color)
+
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = gradient;
+            ctx.stroke();
+
+            // Draw hour markers
+            for (let i = 1; i <= 12; i++) {
+                const angle = (i * Math.PI / 6) - Math.PI / 2;
+                const x1 = centerX + (radius - 25) * Math.cos(angle);
+                const y1 = centerY + (radius - 25) * Math.sin(angle);
+
+                ctx.font = 'bold 20px Arial';
+                ctx.fillStyle = '#e5e7eb';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(i.toString(), x1, y1);
+            }
+
+            // Draw minute markers
+            for (let i = 0; i < 60; i++) {
+                if (i % 5 !== 0) {
+                    const angle = (i * Math.PI / 30) - Math.PI / 2;
+                    const x1 = centerX + (radius - 10) * Math.cos(angle);
+                    const y1 = centerY + (radius - 10) * Math.sin(angle);
+                    const x2 = centerX + radius * Math.cos(angle);
+                    const y2 = centerY + radius * Math.sin(angle);
+
+                    ctx.beginPath();
+                    ctx.moveTo(x1, y1);
+                    ctx.lineTo(x2, y2);
+                    ctx.lineWidth = 1;
+                    ctx.strokeStyle = '#6b7280';
+                    ctx.stroke();
+                }
+            }
+
+            // Draw hour hand
+            const hourAngle = ((hours % 12) + minutes / 60) * Math.PI / 6 - Math.PI / 2;
+            drawHand(centerX, centerY, radius * 0.5, hourAngle, 8, '#e5e7eb');
+
+            // Draw minute hand
+            const minuteAngle = minutes * Math.PI / 30 - Math.PI / 2;
+            drawHand(centerX, centerY, radius * 0.8, minuteAngle, 4, '#8b5cf6');
+
+            // Draw center circle
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, 8, 0, 2 * Math.PI);
+            ctx.fillStyle = '#ec4899';
+            ctx.fill();
+        }
+
+        // Helper function to draw clock hands
+        function drawHand(centerX, centerY, length, angle, width, color) {
+            ctx.beginPath();
+            ctx.lineWidth = width;
+            ctx.lineCap = 'round';
+            ctx.strokeStyle = color;
+
+            ctx.moveTo(centerX, centerY);
+            ctx.lineTo(
+                centerX + length * Math.cos(angle),
+                centerY + length * Math.sin(angle)
+            );
+
+            ctx.stroke();
+        }
+
+        // Format time to HH:MM (12-hour format)
+        function formatTime(hours, minutes) {
+            hours = hours % 12;
+            if (hours === 0) hours = 12;
+            return `${hours}:${minutes.toString().padStart(2, '0')}`;
+        }
+
+        // Parse time string to hours and minutes
+        function parseTime(timeStr) {
+            const [hoursStr, minutesStr] = timeStr.split(':');
+            return {
+                hours: parseInt(hoursStr),
+                minutes: parseInt(minutesStr)
+            };
+        }
+
+        // Add minutes to a time string
+        function addMinutes(timeStr, minutesToAdd) {
+            let { hours, minutes } = parseTime(timeStr);
+
+            minutes += minutesToAdd;
+
+            while (minutes >= 60) {
+                hours += 1;
+                minutes -= 60;
+            }
+
+            while (minutes < 0) {
+                hours -= 1;
+                minutes += 60;
+            }
+
+            hours = ((hours - 1) % 12) + 1; // Keep hours between 1-12
+            if (hours <= 0) hours += 12;
+
+            return formatTime(hours, minutes);
+        }
+
+        // Add hours to a time string
+        function addHours(timeStr, hoursToAdd) {
+            let { hours, minutes } = parseTime(timeStr);
+
+            hours += hoursToAdd;
+            hours = ((hours - 1) % 12) + 1; // Keep hours between 1-12
+            if (hours <= 0) hours += 12;
+
+            return formatTime(hours, minutes);
+        }
+
+        // Validate time format (HH:MM in 12h format)
+        function isValidTimeFormat(timeStr) {
+            const timeRegex = /^(0?[1-9]|1[0-2]):([0-5][0-9])$/;
+            return timeRegex.test(timeStr);
+        }
+
+        // Show status message
+        function showStatus(message, isError = false) {
+            statusMessage.textContent = message;
+            statusMessage.className = 'status-message ' + (isError ? 'error' : 'success');
+
+            setTimeout(() => {
+                statusMessage.className = 'status-message';
+            }, 3000);
+        }
+
+        // Set busy state
+        function setBusy(busy) {
+            isBusy = busy;
+            busyIndicator.style.display = busy ? 'flex' : 'none';
+
+            // Update popup if open
+            if (popupWindow && !popupWindow.closed && popupWindow.popupInterface) {
+                popupWindow.popupInterface.updateDisplay(currentTime, currentCueIndex, busy);
+            }
+        }
+
+        // Update UI based on real-time mode
+        function updateUIForRealtimeMode() {
+            timeControlsContainer.style.display = useRealTime ? 'block' : 'block';
+            realtimeWarning.style.display = useRealTime ? 'block' : 'none';
+
+            // Disable/enable buttons
+            const buttons = [
+                ...minutesButtons.querySelectorAll('button'),
+                ...hoursButtons.querySelectorAll('button'),
+                ...cueButtons.querySelectorAll('button'),
+                setManualTimeButton,
+                addCueButton
+            ];
+
+            buttons.forEach(button => {
+                if (useRealTime) {
+                    button.classList.add('btn-disabled');
+                } else {
+                    button.classList.remove('btn-disabled');
+                }
+            });
+        }
+
+        // API Functions
+        async function fetchConfig() {
+            try {
+                const response = await fetch('/api/getConfig');
+                if (!response.ok) throw new Error('Fehler beim Abrufen der Konfiguration');
+
+                const data = await response.json();
+                useRealTime = data.useRealTime;
+                intervalTime = data.intervalTime;
+
+                // Update UI
+                realtimeToggle.checked = useRealTime;
+                realtimeStatus.textContent = useRealTime ? 'Ein' : 'Aus';
+                intervalTimeInput.value = intervalTime;
+                updateUIForRealtimeMode();
+
+                return data;
+            } catch (error) {
+                console.error('Fehler beim Abrufen der Konfiguration:', error);
+                showStatus('Fehler beim Abrufen der Konfiguration', true);
+            }
+        }
+
+        async function pollCurrentTime() {
+            try {
+                const response = await fetch('/api/poll');
+                if (!response.ok) throw new Error('Fehler beim Abrufen der Zeit');
+
+                const data = await response.json();
+                currentTime = data.currentTime;
+
+                // Update UI
+                currentTimeElement.textContent = currentTime;
+                drawClock(currentTime);
+
+                // Update popup if open
+                if (popupWindow && !popupWindow.closed && popupWindow.popupInterface) {
+                    popupWindow.popupInterface.updateDisplay(currentTime, currentCueIndex, isBusy);
+                }
+
+                return data;
+            } catch (error) {
+                console.error('Fehler beim Abrufen der Zeit:', error);
+                showStatus('Fehler beim Abrufen der Zeit', true);
+            }
+        }
+
+        async function setTime(time) {
+            try {
+                if (!isValidTimeFormat(time)) {
+                    showStatus('Ungültiges Zeitformat. Bitte HH:MM im 12-Stunden-Format verwenden.', true);
+                    return false;
+                }
+
+                setBusy(true);
+
+                const response = await fetch(`/api/tickToTime?time=${time}`, {
+                    method: 'POST'
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || 'Fehler beim Einstellen der Zeit');
+                }
+
+                const data = await response.json();
+                showStatus(`Zeit erfolgreich auf ${time} eingestellt`);
+
+                // Update UI immediately
+                currentTime = time;
+                currentTimeElement.textContent = time;
+                drawClock(time);
+
+                // Update popup if open
+                if (popupWindow && !popupWindow.closed && popupWindow.popupInterface) {
+                    popupWindow.popupInterface.updateDisplay(currentTime, currentCueIndex, isBusy);
+                }
+
+                return true;
+            } catch (error) {
+                console.error('Fehler beim Einstellen der Zeit:', error);
+                showStatus(error.message || 'Der Server ist gerade mit dem Verstellen der Uhr beschäftigt', true);
+                return false;
+            } finally {
+                setBusy(false);
+            }
+        }
+
+        async function overrideTime(time) {
+            try {
+                if (!isValidTimeFormat(time)) {
+                    showStatus('Ungültiges Zeitformat. Bitte HH:MM im 12-Stunden-Format verwenden.', true);
+                    return false;
+                }
+
+                setBusy(true);
+
+                const response = await fetch(`/api/overrideTime?time=${time}`, {
+                    method: 'POST'
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || 'Fehler beim Überschreiben der Zeit');
+                }
+
+                const data = await response.json();
+                showStatus(`Physikalische Uhrzeit erfolgreich auf ${time} überschrieben`);
+
+                return true;
+            } catch (error) {
+                console.error('Fehler beim Überschreiben der Zeit:', error);
+                showStatus(error.message || 'Der Server ist gerade mit dem Verstellen der Uhr beschäftigt', true);
+                return false;
+            } finally {
+                setBusy(false);
+            }
+        }
+
+        async function setIntervalTimeAPI(time) {
+            try {
+                if (isNaN(time) || time < 50) {
+                    showStatus('Ungültige Intervalzeit. Muss mindestens 50ms sein.', true);
+                    return false;
+                }
+
+                const response = await fetch(`/api/setIntervalTime?time=${time}`, {
+                    method: 'POST'
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || 'Fehler beim Einstellen der Intervalzeit');
+                }
+
+                const data = await response.json();
+                intervalTime = time;
+                showStatus(`Intervalzeit erfolgreich auf ${time}ms eingestellt`);
+
+                return true;
+            } catch (error) {
+                console.error('Fehler beim Einstellen der Intervalzeit:', error);
+                showStatus(error.message || 'Fehler beim Einstellen der Intervalzeit', true);
+                return false;
+            }
+        }
+
+        async function setUseRealTimeAPI(useRealTimeValue) {
+            try {
+                const response = await fetch(`/api/setUseRealTime?useRealTime=${useRealTimeValue}`, {
+                    method: 'POST'
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || 'Fehler beim Einstellen des Echtzeitmodus');
+                }
+
+                const data = await response.json();
+                useRealTime = useRealTimeValue;
+                showStatus(`Echtzeitmodus erfolgreich ${useRealTimeValue ? 'aktiviert' : 'deaktiviert'}`);
+
+                // Update UI
+                updateUIForRealtimeMode();
+
+                return true;
+            } catch (error) {
+                console.error('Fehler beim Einstellen des Echtzeitmodus:', error);
+                showStatus(error.message || 'Fehler beim Einstellen des Echtzeitmodus', true);
+                return false;
+            }
+        }
+
+        // Cue Stack Functions
+        function loadCuesFromLocalStorage() {
+            const savedCues = localStorage.getItem('clockCues');
+            if (savedCues) {
+                cues = JSON.parse(savedCues);
+                renderCueList();
+            }
+        }
+
+        function saveCuesToLocalStorage() {
+            localStorage.setItem('clockCues', JSON.stringify(cues));
+        }
+
+        function addCue(time) {
+            if (!isValidTimeFormat(time)) {
+                showStatus('Ungültiges Zeitformat. Bitte HH:MM im 12-Stunden-Format verwenden.', true);
+                return false;
+            }
+
+            cues.push(time);
+            saveCuesToLocalStorage();
+            renderCueList();
+            showStatus(`Cue hinzugefügt: ${time}`);
+            return true;
+        }
+
+        function removeCue(index) {
+            cues.splice(index, 1);
+            if (currentCueIndex >= cues.length) {
+                currentCueIndex = cues.length - 1;
+            }
+            saveCuesToLocalStorage();
+            renderCueList();
+        }
+
+        function renderCueList() {
+            cueList.innerHTML = '';
+
+            if (cues.length === 0) {
+                const emptyItem = document.createElement('div');
+                emptyItem.className = 'cue-item';
+                emptyItem.textContent = 'Keine Cues vorhanden';
+                cueList.appendChild(emptyItem);
+                return;
+            }
+
+            cues.forEach((cue, index) => {
+                const cueItem = document.createElement('div');
+                cueItem.className = 'cue-item';
+                if (index === currentCueIndex) {
+                    cueItem.style.backgroundColor = 'rgba(139, 92, 246, 0.2)';
+                    cueItem.style.borderLeft = '3px solid var(--primary-light)';
+                }
+
+                const cueText = document.createElement('span');
+                cueText.textContent = `${index + 1}. ${cue}`;
+
+                const deleteButton = document.createElement('button');
+                deleteButton.textContent = 'Löschen';
+                deleteButton.addEventListener('click', () => removeCue(index));
+
+                cueItem.appendChild(cueText);
+                cueItem.appendChild(deleteButton);
+                cueList.appendChild(cueItem);
+            });
+
+            // Update popup if open
+            if (popupWindow && !popupWindow.closed && popupWindow.popupInterface) {
+                popupWindow.popupInterface.updateDisplay(currentTime, currentCueIndex, isBusy);
+            }
+        }
+
+        function exportCues() {
+            const dataStr = JSON.stringify(cues);
+            const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
+
+            const exportFileDefaultName = 'uhr-cues.json';
+
+            const linkElement = document.createElement('a');
+            linkElement.setAttribute('href', dataUri);
+            linkElement.setAttribute('download', exportFileDefaultName);
+            linkElement.click();
+        }
+
+        function importCues(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                try {
+                    const importedCues = JSON.parse(e.target.result);
+                    if (Array.isArray(importedCues)) {
+                        cues = importedCues;
+                        saveCuesToLocalStorage();
+                        renderCueList();
+                        showStatus(`${cues.length} Cues erfolgreich importiert`);
+                    } else {
+                        throw new Error('Ungültiges Dateiformat');
+                    }
+                } catch (error) {
+                    console.error('Fehler beim Importieren der Cues:', error);
+                    showStatus('Fehler beim Importieren der Cues: Ungültiges Dateiformat', true);
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function goToNextCue() {
+            if (cues.length === 0 || useRealTime) return;
+
+            currentCueIndex = (currentCueIndex + 1) % cues.length;
+            const nextCue = cues[currentCueIndex];
+            setTime(nextCue);
+            renderCueList();
+        }
+
+        function goToPrevCue() {
+            if (cues.length === 0 || useRealTime) return;
+
+            currentCueIndex = (currentCueIndex - 1 + cues.length) % cues.length;
+            const prevCue = cues[currentCueIndex];
+            setTime(prevCue);
+            renderCueList();
+        }
+
+        function setCueIndex(index) {
+            if (index >= 0 && index < cues.length && !useRealTime) {
+                currentCueIndex = index;
+                const selectedCue = cues[currentCueIndex];
+                setTime(selectedCue);
+                renderCueList();
+            }
+        }
+
+        // Popup Window Functions
+        function openCuePopup() {
+            // Close existing popup if open
+            if (popupWindow && !popupWindow.closed) {
+                popupWindow.close();
+            }
+
+            // Create popup window
+            const popupTemplate = document.getElementById('popup-template').innerHTML;
+            const popupWidth = 600;
+            const popupHeight = 800;
+            const left = (window.innerWidth - popupWidth) / 2 + window.screenX;
+            const top = (window.innerHeight - popupHeight) / 2 + window.screenY;
+
+            popupWindow = window.open('', 'cueStackPopup', `width=${popupWidth},height=${popupHeight},left=${left},top=${top}`);
+            popupWindow.document.write(popupTemplate);
+            popupWindow.document.close();
+
+            // Initialize popup when loaded
+            popupWindow.onload = function () {
+                popupWindow.initializePopup(cues, currentCueIndex, currentTime);
+            };
+
+            // Handle popup close
+            popupWindow.onbeforeunload = function () {
+                popupWindow = null;
+            };
+        }
+
+        // Event Listeners
+        realtimeToggle.addEventListener('change', function () {
+            const newValue = this.checked;
+            realtimeStatus.textContent = newValue ? 'Ein' : 'Aus';
+            setUseRealTimeAPI(newValue);
+        });
+
+        setIntervalButton.addEventListener('click', function () {
+            const newIntervalTime = parseInt(intervalTimeInput.value);
+            setIntervalTimeAPI(newIntervalTime);
+        });
+
+        setOverrideButton.addEventListener('click', function () {
+            const overrideTimeValue = overrideTimeInput.value;
+            overrideTime(overrideTimeValue);
+        });
+
+        setManualTimeButton.addEventListener('click', function () {
+            if (useRealTime) return;
+            const manualTime = manualTimeInput.value;
+            setTime(manualTime);
+        });
+
+        // Time jump buttons
+        document.querySelectorAll('[data-minutes]').forEach(button => {
+            button.addEventListener('click', function () {
+                if (useRealTime) return;
+                const minutesToAdd = parseInt(this.dataset.minutes);
+                const newTime = addMinutes(currentTime, minutesToAdd);
+                setTime(newTime);
+            });
+        });
+
+        document.querySelectorAll('[data-hours]').forEach(button => {
+            button.addEventListener('click', function () {
+                if (useRealTime) return;
+                const hoursToAdd = parseInt(this.dataset.hours);
+                const newTime = addHours(currentTime, hoursToAdd);
+                setTime(newTime);
+            });
+        });
+
+        // Cue stack buttons
+        addCueButton.addEventListener('click', function () {
+            if (useRealTime) return;
+            const cueTime = cueTimeInput.value;
+            if (addCue(cueTime)) {
+                cueTimeInput.value = '';
+            }
+        });
+
+        nextCueButton.addEventListener('click', goToNextCue);
+        prevCueButton.addEventListener('click', goToPrevCue);
+
+        exportCuesButton.addEventListener('click', function () {
+            if (useRealTime) return;
+            exportCues();
+        });
+
+        importCuesButton.addEventListener('click', function () {
+            if (useRealTime) return;
+            importFileInput.click();
+        });
+
+        importFileInput.addEventListener('change', importCues);
+
+        // Popup button
+        openCuePopupButton.addEventListener('click', openCuePopup);
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function (event) {
+            if (!useRealTime) {
+                if (event.key === 'ArrowRight' || event.key === ' ') {
+                    goToNextCue();
+                } else if (event.key === 'ArrowLeft') {
+                    goToPrevCue();
+                }
+            }
+        });
+
+        // Expose functions for popup window
+        window.goToNextCue = goToNextCue;
+        window.goToPrevCue = goToPrevCue;
+        window.setCueIndex = setCueIndex;
+
+        // Initialize
+        async function initialize() {
+            setupCanvas();
+            await fetchConfig();
+            await pollCurrentTime();
+            loadCuesFromLocalStorage();
+
+            // Set up polling interval
+            pollingInterval = setInterval(async () => {
+                await fetchConfig();
+                await pollCurrentTime();
+            }, 5000);
+
+            // Initial draw
+            drawClock(currentTime);
+        }
+
+        // Start the app
+        window.addEventListener('load', initialize);
+
+        // Handle window resize
+        window.addEventListener('resize', function () {
+            setupCanvas();
+            drawClock(currentTime);
+        });
+    </script>
+</body>
+
+</html>

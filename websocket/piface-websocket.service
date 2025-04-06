@@ -1,0 +1,16 @@
+[Unit]
+Description=PiFace WebSocket Server
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/python3 /home/pi/Uhrsteuerung/server_python.py
+WorkingDirectory=/home/pi/Uhrsteuerung
+Restart=always
+User=pi
+Group=pi
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=piface-websocket
+
+[Install]
+WantedBy=multi-user.target
