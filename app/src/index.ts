@@ -171,6 +171,13 @@ app.post('/api/setUseRealTime', async (req, res) => {
         }
 
         await setUseRealTime(useRealTime === 'true');
+
+        if (useRealTime === 'true') {
+            await (await clock.getPiFace()).turnPinOn(3);
+        } else {
+            await (await clock.getPiFace()).turnPinOff(3);
+        }
+
         res.status(200).json({
             status: 'success',
             message: 'Use real time set successfully'

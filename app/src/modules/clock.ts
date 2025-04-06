@@ -1,5 +1,6 @@
 import { PiFaceController } from './piface';
-import { getConfig, setLastTime } from './config';
+import { getConfig, setLastTime, setUseRealTime } from './config';
+import { exec } from 'child_process';
 
 export class ClockController {
     private piface: PiFaceController;
@@ -9,6 +10,7 @@ export class ClockController {
     public calculationInProgress: boolean = false;
     public currentTargetTime: string | null = null;
     private statusSet: boolean = false;
+    private shutdownCounter = 0;
 
     constructor() {
         this.piface = new PiFaceController(process.env.WEBSOCKET_SERVER, Number(process.env.WEBSOCKET_PORT));
@@ -25,10 +27,76 @@ export class ClockController {
         this.startTickProcessing();
         this.startCurrentTime();
 
-        this.piface.onPinOff(1, (pin) => {
-            console.log('Pin 1 is ON');
-            this.piface.turnPinOn(3);
+        this.piface.onPinOff(0, async (pin) => {
+            const currentTime = this.currentTargetTime;
+
+            const config = await getConfig();
+            const useRealTime = config.useRealTime;
+
+            if (useRealTime) return;
+
+            const [hours, minutes] = currentTime.split(':').map(Number);
+            let newHours = hours;
+            let newMinutes = minutes + 1;
+            if (newMinutes > 59) {
+                newMinutes = 0;
+                newHours = (newHours % 12) + 1;
+            }
+            const newTime = `${newHours.toString().padStart(2, '0')}:${newMinutes.toString().padStart(2, '0')}`;
+            await this.tickToTime(newTime);
+            console.log('Clock ticked to:', newTime);
         });
+
+        this.piface.onPinOff(1, async (pin) => {
+            // skip 1 hour
+            const currentTime = this.currentTargetTime;
+            const config = await getConfig();
+            const useRealTime = config.useRealTime;
+            if (useRealTime) return;
+
+            const [hours, minutes] = currentTime.split(':').map(Number);
+            let newHours = hours + 1;
+            let newMinutes = minutes;
+            if (newHours > 12) {
+                newHours = 1;
+            }
+            const newTime = `${newHours.toString().padStart(2, '0')}:${newMinutes.toString().padStart(2, '0')}`;
+            await this.tickToTime(newTime);
+            console.log('Clock ticked to:', newTime);
+        });
+
+        this.piface.onPinOff(2, async (pin) => {
+            const config = await getConfig();
+            const useRealTime = config.useRealTime;
+            
+            if (useRealTime === true) {
+                await setUseRealTime(false);
+                await this.piface.turnPinOff(3);
+            } else {
+                await setUseRealTime(true);
+                await this.piface.turnPinOn(3);
+            }
+        });
+
+        this.piface.onPinOff(3, async (pin) => {
+            this.shutdownCounter++;
+            if (this.shutdownCounter >= 3) {
+                this.shutdownCounter = 0;
+                exec('sudo shutdown now', (error, stdout, stderr) => {
+                    if (error) {
+                        console.error(`Error shutting down: ${error.message}`);
+                        return;
+                    }
+                    if (stderr) {
+                        console.error(`Shutdown stderr: ${stderr}`);
+                        return;
+                    }
+                    console.log(`Shutdown stdout: ${stdout}`);
+                });
+                console.log('Shutting down...');
+            }
+        });
+
     }
 
     public addClockTicks(ticks: number): void {
@@ -37,6 +105,7 @@ export class ClockController {
 
     private async startCurrentTime(): Promise<void> {
         setInterval(async () => {
+            this.shutdownCounter = 0;
             try {
                 const config = await getConfig();
                 const useRealTime = config.useRealTime;
@@ -67,7 +136,10 @@ export class ClockController {
                     }
                     await this.processTick();
                     if (!this.statusSet) {
-                        this.piface.turnPinOn(2);
+                        this.piface.turnPinOn(3);
+                        if (config.useRealTime) {
+                            this.piface.turnPinOn(3);
+                        } else this.piface.turnPinOff(2);
                         this.statusSet = true;
                     }
                 }
@@ -162,5 +234,9 @@ export class ClockController {
         } finally {
             this.calculationInProgress = false;
         }
+    }
+
+    public async getPiFace(): Promise<PiFaceController> {
+        return this.piface;
     }
 }
