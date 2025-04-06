@@ -44,7 +44,6 @@ export class ClockController {
             }
             const newTime = `${newHours.toString().padStart(2, '0')}:${newMinutes.toString().padStart(2, '0')}`;
             await this.tickToTime(newTime);
-            console.log('Clock ticked to:', newTime);
         });
 
         this.piface.onPinOff(1, async (pin) => {
@@ -115,7 +114,6 @@ export class ClockController {
                     const minutes = date.getMinutes().toString().padStart(2, '0');
                     const currentTime = `${hours}:${minutes}`;
                     await this.tickToTime(currentTime);
-                    console.log('Current time set to:', currentTime);
                 }
             } catch (err) {
                 console.error('Error in startCurrentTime:', err);
@@ -152,7 +150,6 @@ export class ClockController {
     private async processTick(): Promise<void> {
         if (this.clockTicksQueue > 0) {
             this.operationInProgress = true;
-            console.log('Processing tick...');
             try {
                 await this.piface.turnPinOn(0);
                 await this.piface.turnPinOn(1);
@@ -178,7 +175,6 @@ export class ClockController {
         }
 
         if (this.currentTargetTime === time) {
-            console.log('Clock is already at target time:', time);
             return true;
         }
 
@@ -205,7 +201,6 @@ export class ClockController {
             this.addClockTicks(difference);
             this.currentTargetTime = time;
             await setLastTime(time);
-            console.log('Clock set to target time:', time);
             return true;
         } catch (err) {
             console.error('Error in tickToTime:', err);
