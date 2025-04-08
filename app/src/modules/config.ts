@@ -5,12 +5,14 @@ export type configType = {
     intervalTime: number;
     lastTime: string;
     useRealTime: boolean;
+    lastRelayState: boolean;
 }
 
 export let config: configType = {
     intervalTime: 1000,
     lastTime: "00:00",
-    useRealTime: true
+    useRealTime: true,
+    lastRelayState: false,
 }
 
 export async function loadConfig(): Promise<any> {
@@ -44,6 +46,12 @@ export async function setLastTime(time: string): Promise<void> {
 
 export async function setUseRealTime(useRealTime: boolean): Promise<void> {
     config.useRealTime = useRealTime;
+    const configPath = path.join('/config/config.json');
+    fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
+}
+
+export async function setLastRelayState(state: boolean): Promise<void> {
+    config.lastRelayState = state;
     const configPath = path.join('/config/config.json');
     fs.writeFileSync(configPath, JSON.stringify(config, null, 2));
 }

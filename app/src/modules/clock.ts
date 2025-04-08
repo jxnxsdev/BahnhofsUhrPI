@@ -1,5 +1,5 @@
 import { PiFaceController } from './piface';
-import { getConfig, setLastTime, setUseRealTime } from './config';
+import { getConfig, setLastRelayState, setLastTime, setUseRealTime } from './config';
 import { exec } from 'child_process';
 
 export class ClockController {
@@ -11,6 +11,7 @@ export class ClockController {
     public currentTargetTime: string | null = null;
     private statusSet: boolean = false;
     private shutdownCounter = 0;
+    private lastRelayState: boolean = false;
 
     constructor() {
         this.piface = new PiFaceController(process.env.WEBSOCKET_SERVER, Number(process.env.WEBSOCKET_PORT));
@@ -20,6 +21,7 @@ export class ClockController {
 
         getConfig().then(config => {
             this.currentTargetTime = config.lastTime;
+            this.lastRelayState = config.lastRelayState;
         }).catch(err => {
             console.error('Error loading configuration:', err);
         });
@@ -81,6 +83,7 @@ export class ClockController {
             this.shutdownCounter++;
             if (this.shutdownCounter >= 3) {
                 this.shutdownCounter = 0;
+                await this.shutdown();
                 exec('sudo shutdown now', (error, stdout, stderr) => {
                     if (error) {
                         console.error(`Error shutting down: ${error.message}`);
@@ -144,21 +147,18 @@ export class ClockController {
             } catch (err) {
                 console.error('Error in startTickProcessing:', err);
             }
-        }, (await getConfig()).intervalTime * 2);
+        }, (await getConfig()).intervalTime);
     }
 
     private async processTick(): Promise<void> {
         if (this.clockTicksQueue > 0) {
             this.operationInProgress = true;
             try {
-                await this.piface.turnPinOn(0);
-                await this.piface.turnPinOn(1);
+                await this.tick();
+                this.clockTicksQueue--;
                 const config = await getConfig();
                 const intervalTime = config.intervalTime;
                 await new Promise(resolve => setTimeout(resolve, intervalTime));
-                await this.piface.turnPinOff(0);
-                await this.piface.turnPinOff(1);
-                this.clockTicksQueue--;
                 console.log('Tick processed, remaining ticks:', this.clockTicksQueue);
             } catch (err) {
                 console.error('Error processing tick:', err);
@@ -210,6 +210,20 @@ export class ClockController {
         }
     }
 
+    private async tick(): Promise<void> {
+        if (this.lastRelayState) {
+            this.lastRelayState = false;
+            await this.piface.turnPinOff(0);
+            await this.piface.turnPinOff(1);
+        } 
+
+        if (!this.lastRelayState) {
+            this.lastRelayState = true;
+            await this.piface.turnPinOn(0);
+            await this.piface.turnPinOn(1);
+        }
+    }
+
 
     public async overrideTime(time: string): Promise<boolean> {
         if (this.calculationInProgress) {
@@ -233,5 +247,15 @@ export class ClockController {
 
     public async getPiFace(): Promise<PiFaceController> {
         return this.piface;
+    }
+
+    public async shutdown(): Promise<void> {
+        await setLastRelayState(this.lastRelayState);
+        await setLastTime(this.currentTargetTime);
+        
+        this.piface.turnPinOff(0);
+        this.piface.turnPinOff(1);
+        this.piface.turnPinOff(2);
+        this.piface.turnPinOff(3);
     }
 }
