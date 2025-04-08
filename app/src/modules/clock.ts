@@ -14,7 +14,7 @@ export class ClockController {
     public currentTargetTime: string | null = null;
 
     constructor() {
-        this.piface = new PiFaceController(process.env.WEBSOCKET_SERVER, Number(process.env.WEBSOCKET_PORT));
+        this.piface = new PiFaceController("127.0.0.1", 3000);
 
         getConfig().then(config => {
             this.currentTargetTime = config.lastTime;

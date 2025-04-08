@@ -202,9 +202,9 @@ app.get('/api/getConfig', async (req, res) => {
 
 app.use(express.static(path.join(__dirname, '../public')));
 
-app.listen(process.env.PORT, async () => {
+app.listen("80", async () => {
     try {
-        console.log(`Server is running on port ${process.env.PORT}`);
+        console.log(`Server is running on port 80`);
         await loadConfig();
         clock = new ClockController();
     } catch (err) {
