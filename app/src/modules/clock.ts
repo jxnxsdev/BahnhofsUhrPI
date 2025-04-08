@@ -4,242 +4,163 @@ import { exec } from 'child_process';
 
 export class ClockController {
     private piface: PiFaceController;
-    private lastTick: number;
-    private clockTicksQueue: number;
-    public operationInProgress: boolean;
-    public calculationInProgress: boolean = false;
-    public currentTargetTime: string | null = null;
-    private statusSet: boolean = false;
+    private clockTicksQueue = 0;
+    private lastRelayState = false;
     private shutdownCounter = 0;
-    private lastRelayState: boolean = false;
+    private statusSet = false;
+
+    public operationInProgress = false;
+    public calculationInProgress = false;
+    public currentTargetTime: string | null = null;
 
     constructor() {
         this.piface = new PiFaceController(process.env.WEBSOCKET_SERVER, Number(process.env.WEBSOCKET_PORT));
-        this.lastTick = 0;
-        this.clockTicksQueue = 0;
-        this.operationInProgress = false;
 
         getConfig().then(config => {
             this.currentTargetTime = config.lastTime;
             this.lastRelayState = config.lastRelayState;
-        }).catch(err => {
-            console.error('Error loading configuration:', err);
         });
 
-        this.startTickProcessing();
-        this.startCurrentTime();
-
-        this.piface.onPinOff(0, async (pin) => {
-            const currentTime = this.currentTargetTime;
-
-            const config = await getConfig();
-            const useRealTime = config.useRealTime;
-
-            if (useRealTime) return;
-
-            const [hours, minutes] = currentTime.split(':').map(Number);
-            let newHours = hours;
-            let newMinutes = minutes + 1;
-            if (newMinutes > 59) {
-                newMinutes = 0;
-                newHours = (newHours % 12) + 1;
-            }
-            const newTime = `${newHours.toString().padStart(2, '0')}:${newMinutes.toString().padStart(2, '0')}`;
-            await this.tickToTime(newTime);
-        });
-
-        this.piface.onPinOff(1, async (pin) => {
-            // skip 1 hour
-            const currentTime = this.currentTargetTime;
-            const config = await getConfig();
-            const useRealTime = config.useRealTime;
-            if (useRealTime) return;
-
-            const [hours, minutes] = currentTime.split(':').map(Number);
-            let newHours = hours + 1;
-            let newMinutes = minutes;
-            if (newHours > 12) {
-                newHours = 1;
-            }
-            const newTime = `${newHours.toString().padStart(2, '0')}:${newMinutes.toString().padStart(2, '0')}`;
-            await this.tickToTime(newTime);
-            console.log('Clock ticked to:', newTime);
-        });
-
-        this.piface.onPinOff(2, async (pin) => {
-            const config = await getConfig();
-            const useRealTime = config.useRealTime;
-            
-            if (useRealTime === true) {
-                await setUseRealTime(false);
-                await this.piface.turnPinOff(3);
-            } else {
-                await setUseRealTime(true);
-                await this.piface.turnPinOn(3);
-            }
-        });
-
-        this.piface.onPinOff(3, async (pin) => {
-            this.shutdownCounter++;
-            if (this.shutdownCounter >= 3) {
-                this.shutdownCounter = 0;
-                await this.shutdown();
-                exec('sudo shutdown now', (error, stdout, stderr) => {
-                    if (error) {
-                        console.error(`Error shutting down: ${error.message}`);
-                        return;
-                    }
-                    if (stderr) {
-                        console.error(`Shutdown stderr: ${stderr}`);
-                        return;
-                    }
-                    console.log(`Shutdown stdout: ${stdout}`);
-                });
-                console.log('Shutting down...');
-            }
-        });
-
+        this.setupInputHandlers();
+        this.startClockUpdater();
+        this.startTickProcessor();
     }
 
     public addClockTicks(ticks: number): void {
         this.clockTicksQueue += ticks;
     }
 
-    private async startCurrentTime(): Promise<void> {
+    private setupInputHandlers(): void {
+        this.piface.onPinOff(0, async () => {
+            const config = await getConfig();
+            if (config.useRealTime) return;
+
+            const [h, m] = this.currentTargetTime.split(':').map(Number);
+            const newMinutes = (m + 1) % 60;
+            const newHours = newMinutes === 0 ? (h % 12) + 1 : h;
+            const time = `${newHours.toString().padStart(2, '0')}:${newMinutes.toString().padStart(2, '0')}`;
+            await this.tickToTime(time);
+        });
+
+        this.piface.onPinOff(1, async () => {
+            const config = await getConfig();
+            if (config.useRealTime) return;
+
+            const [h, m] = this.currentTargetTime.split(':').map(Number);
+            const newHours = h % 12 + 1;
+            const time = `${newHours.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+            await this.tickToTime(time);
+        });
+
+        this.piface.onPinOff(2, async () => {
+            const config = await getConfig();
+            const newState = !config.useRealTime;
+            await setUseRealTime(newState);
+            if (newState) {
+                await this.piface.turnPinOn(3);
+            } else {
+                await this.piface.turnPinOff(3);
+            }
+        });
+
+        this.piface.onPinOff(3, async () => {
+            if (this.clockTicksQueue > 0) return; // Prevent shutdown if there are remaining ticks
+            this.shutdownCounter++;
+            if (this.shutdownCounter >= 3) {
+                this.shutdownCounter = 0;
+                await this.shutdown();
+                exec('sudo shutdown now');
+            }
+        });
+    }
+
+    private startClockUpdater(): void {
         setInterval(async () => {
-            this.shutdownCounter = 0;
             try {
                 const config = await getConfig();
-                const useRealTime = config.useRealTime;
-                if (useRealTime) {
-                    const date = new Date();
-                    const hours = date.getHours() % 12 || 12;
-                    const minutes = date.getMinutes().toString().padStart(2, '0');
-                    const currentTime = `${hours}:${minutes}`;
-                    await this.tickToTime(currentTime);
-                }
-            } catch (err) {
-                console.error('Error in startCurrentTime:', err);
-            }
+                if (!config.useRealTime) return;
+
+                const now = new Date();
+                const h = now.getHours() % 12 || 12;
+                const m = now.getMinutes();
+                const time = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+                await this.tickToTime(time);
+            } catch {}
         }, 1000);
     }
 
-    private async startTickProcessing(): Promise<void> {
+    private async startTickProcessor(): Promise<void> {
+        const config = await getConfig();
+        const interval = config.intervalTime;
+
         setInterval(async () => {
-            try {
-                const config = await getConfig();
-                const intervalTime = config.intervalTime;
-
-                if (this.clockTicksQueue > 0 && !this.operationInProgress) {
-                    if (!this.piface.isConnected) {
-                        console.log('PiFace is not connected, skipping tick processing.');
-                        return;
-                    }
-                    await this.processTick();
-                    if (!this.statusSet) {
-                        this.piface.turnPinOn(3);
-                        if (config.useRealTime) {
-                            this.piface.turnPinOn(3);
-                        } else this.piface.turnPinOff(2);
-                        this.statusSet = true;
-                    }
-                }
-            } catch (err) {
-                console.error('Error in startTickProcessing:', err);
+            if (!this.statusSet && this.piface.isConnected) {
+                await this.piface.turnPinOn(2);
+                if (!config.useRealTime) await this.piface.turnPinOff(3); else await this.piface.turnPinOn(3);
+                this.statusSet = true;
             }
-        }, (await getConfig()).intervalTime);
-    }
-
-    private async processTick(): Promise<void> {
-        if (this.clockTicksQueue > 0) {
+            if (this.operationInProgress || !this.piface.isConnected || this.clockTicksQueue === 0) return;
+            
             this.operationInProgress = true;
             try {
-                await this.tick();
-                this.clockTicksQueue--;
-                const config = await getConfig();
-                const intervalTime = config.intervalTime;
-                await new Promise(resolve => setTimeout(resolve, intervalTime));
-                console.log('Tick processed, remaining ticks:', this.clockTicksQueue);
-            } catch (err) {
-                console.error('Error processing tick:', err);
+                await this.processTick();
             } finally {
                 this.operationInProgress = false;
             }
-        }
+        }, interval);
     }
 
-    public async tickToTime(time: string): Promise<boolean> {
-        if (this.calculationInProgress) {
-            console.log('Operation in progress, cannot set time.');
-            return false;
+    private async processTick(): Promise<void> {
+        if (this.clockTicksQueue <= 0) return;
+
+        this.lastRelayState = !this.lastRelayState;
+
+        if (this.lastRelayState) {
+            await this.piface.turnPinOn(0);
+            await this.piface.turnPinOn(1);
+        } else {
+            await this.piface.turnPinOff(0);
+            await this.piface.turnPinOff(1);
         }
 
-        if (this.currentTargetTime === time) {
-            return true;
-        }
+        this.clockTicksQueue--;
+
+        await setLastRelayState(this.lastRelayState);
+        console.log('Tick processed. Remaining:', this.clockTicksQueue);
+    }
+
+    public async tickToTime(target: string): Promise<boolean> {
+        if (this.calculationInProgress || this.currentTargetTime === target) return false;
 
         this.calculationInProgress = true;
         try {
-            const normalize12Hour = (h: number) => (h % 12 === 0 ? 12 : h % 12);
+            const parse = (t: string) => t.split(':').map(Number);
+            const [th, tm] = parse(target);
+            const [ch, cm] = parse(this.currentTargetTime);
 
-            const targetTime = time.split(':');
-            const targetHour = parseInt(targetTime[0], 10);
-            const targetMinute = parseInt(targetTime[1], 10);
+            const toMin = (h: number, m: number) => ((h % 12 || 12) * 60 + m) % 720;
 
-            const currentTime = this.currentTargetTime.split(':');
-            const currentHour = parseInt(currentTime[0], 10);
-            const currentMinute = parseInt(currentTime[1], 10);
+            const diff = (toMin(th, tm) - toMin(ch, cm) + 720) % 720;
+            this.addClockTicks(diff);
 
-            const normTargetHour = normalize12Hour(targetHour);
-            const normCurrentHour = normalize12Hour(currentHour);
-
-            const targetTotalMinutes = normTargetHour * 60 + targetMinute;
-            const currentTotalMinutes = normCurrentHour * 60 + currentMinute;
-
-            const difference = (targetTotalMinutes - currentTotalMinutes + 720) % 720;
-
-            this.addClockTicks(difference);
-            this.currentTargetTime = time;
-            await setLastTime(time);
+            this.currentTargetTime = target;
+            await setLastTime(target);
             return true;
-        } catch (err) {
-            console.error('Error in tickToTime:', err);
+        } catch {
             return false;
         } finally {
             this.calculationInProgress = false;
         }
     }
 
-    private async tick(): Promise<void> {
-        if (this.lastRelayState) {
-            this.lastRelayState = false;
-            await this.piface.turnPinOff(0);
-            await this.piface.turnPinOff(1);
-        } 
-
-        if (!this.lastRelayState) {
-            this.lastRelayState = true;
-            await this.piface.turnPinOn(0);
-            await this.piface.turnPinOn(1);
-        }
-    }
-
-
     public async overrideTime(time: string): Promise<boolean> {
-        if (this.calculationInProgress) {
-            console.log('Operation in progress, cannot set time.');
-            return false;
-        }
+        if (this.calculationInProgress) return false;
 
         this.calculationInProgress = true;
         try {
             this.currentTargetTime = time;
             await setLastTime(time);
-            console.log('Clock set to target time:', time);
             return true;
-        } catch (err) {
-            console.error('Error in overrideTime:', err);
-            return false;
         } finally {
             this.calculationInProgress = false;
         }
@@ -252,10 +173,9 @@ export class ClockController {
     public async shutdown(): Promise<void> {
         await setLastRelayState(this.lastRelayState);
         await setLastTime(this.currentTargetTime);
-        
-        this.piface.turnPinOff(0);
-        this.piface.turnPinOff(1);
-        this.piface.turnPinOff(2);
-        this.piface.turnPinOff(3);
+
+        for (let i = 0; i <= 3; i++) {
+            await this.piface.turnPinOff(i);
+        }
     }
 }
