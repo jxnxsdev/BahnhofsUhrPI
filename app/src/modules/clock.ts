@@ -68,8 +68,9 @@ export class ClockController {
             this.shutdownCounter++;
             if (this.shutdownCounter >= 3) {
                 this.shutdownCounter = 0;
-                await this.shutdown();
-                exec('sudo shutdown now');
+                await this.shutdown().then(() => {
+                    exec('sudo shutdown now');
+                });
             }
         });
     }
@@ -118,9 +119,13 @@ export class ClockController {
         if (this.lastRelayState) {
             await this.piface.turnPinOn(0);
             await this.piface.turnPinOn(1);
+            await this.piface.turnPinOn(4);
+            await this.piface.turnPinOff(5);
         } else {
             await this.piface.turnPinOff(0);
             await this.piface.turnPinOff(1);
+            await this.piface.turnPinOff(4);
+            await this.piface.turnPinOn(5);
         }
 
         this.clockTicksQueue--;
@@ -174,8 +179,11 @@ export class ClockController {
         await setLastRelayState(this.lastRelayState);
         await setLastTime(this.currentTargetTime);
 
-        for (let i = 0; i <= 3; i++) {
-            await this.piface.turnPinOff(i);
-        }
+        await this.piface.turnPinOff(0);
+        await this.piface.turnPinOff(1);
+        await this.piface.turnPinOff(2);
+        await this.piface.turnPinOff(3);
+        await this.piface.turnPinOff(4);
+        await this.piface.turnPinOff(5);
     }
 }
