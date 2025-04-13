@@ -26,7 +26,7 @@ Belegung der Ausgangspins:
 | 2       | Status LED (System Bereit)           |
 | 3       | Status LED (Echtzeitmodus Aktiviert) |
 | 4       | Status LED (Schaltstatus Ausgang)    |
-| 4       | Status LED (Schaltstatus Ausgang)    |
+| 5       | Status LED (Schaltstatus Ausgang)    |
 
 ## Systemanforderungen
 
